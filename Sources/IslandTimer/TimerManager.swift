@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import AppKit
 
 class TimerManager: ObservableObject {
     enum TimerMode {
@@ -68,7 +69,9 @@ class TimerManager: ObservableObject {
     private func handleTimerEnd() {
         timer?.cancel()
         status = .finished
-        // Optional: Trigger system notification or sound here
+        
+        // Play system notification sound
+        NSSound(named: "Glass")?.play()
     }
     
     var timeString: String {

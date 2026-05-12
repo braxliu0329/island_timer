@@ -1,8 +1,17 @@
 import SwiftUI
 
+struct IslandSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
+    }
+}
+
 struct IslandView: View {
     @ObservedObject var timerManager: TimerManager
     @ObservedObject var displaySettings: DisplaySettings
+    
+    var onSizeChange: ((CGSize) -> Void)? = nil
     
     var notchWidth: CGFloat { displaySettings.notchWidth }
     var notchHeight: CGFloat { displaySettings.notchHeight }
@@ -30,49 +39,66 @@ struct IslandView: View {
                 // Background Shape
                 UnevenRoundedRectangle(
                     topLeadingRadius: 0,
-                    bottomLeadingRadius: currentHeight * 0.4,
-                    bottomTrailingRadius: currentHeight * 0.4,
+                    bottomLeadingRadius: currentHeight * 0.45,
+                    bottomTrailingRadius: currentHeight * 0.45,
                     topTrailingRadius: 0,
                     style: .continuous
                 )
                 .fill(Color.black)
                 .frame(width: currentWidth, height: currentHeight)
-                .shadow(color: .black.opacity(isExpanded ? 0.5 : 0), radius: 10, x: 0, y: 5)
+                .overlay(
+                    GeometryReader { geo in
+                        Color.clear
+                            .preference(key: IslandSizeKey.self, value: geo.size)
+                    }
+                )
+                .shadow(color: .black.opacity(isExpanded || timerManager.status == .finished ? 0.4 : 0), radius: 10, x: 0, y: 5)
                 
-                // Content
+                // Content Container
                 ZStack(alignment: .top) {
                     if timerManager.status == .finished {
-                        finishedView
-                            .padding(.top, notchHeight)
-                            .opacity(isExpanded ? 1 : 0)
+                        Group {
+                            if timerManager.mode == .work {
+                                workFinishedView
+                                    .id("workFinished")
+                            } else {
+                                breakFinishedView
+                                    .id("breakFinished")
+                            }
+                        }
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .move(edge: .top)), removal: .opacity))
                     } else if isExpanded {
                         expandedView
-                            .padding(.top, notchHeight)
-                            .opacity(1)
+                            .id("expanded")
+                            .transition(.opacity.combined(with: .scale(scale: 0.95)))
                     } else if isRunning {
                         compactRunningView
-                            .padding(.top, notchHeight)
-                            .opacity(1)
+                            .id("running")
+                            .transition(.opacity)
                     } else {
                         collapsedView
+                            .id("collapsed")
                     }
                 }
-                .frame(width: currentWidth, height: currentHeight)
+                .padding(.top, notchHeight)
+                .frame(width: currentWidth, height: currentHeight, alignment: .top)
                 .foregroundColor(.white)
                 .clipped()
             }
-            // CRITICAL: This contentShape ensures only the black capsule is interactive
+            .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0), value: currentWidth)
+            .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0), value: currentHeight)
+            .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0), value: timerManager.status)
+            .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0), value: displaySettings.isHovered)
+            .animation(.spring(response: 0.4, dampingFraction: 0.75, blendDuration: 0), value: displaySettings.isPinned)
             .contentShape(UnevenRoundedRectangle(
                 topLeadingRadius: 0,
-                bottomLeadingRadius: currentHeight * 0.4,
-                bottomTrailingRadius: currentHeight * 0.4,
+                bottomLeadingRadius: currentHeight * 0.45,
+                bottomTrailingRadius: currentHeight * 0.45,
                 topTrailingRadius: 0,
                 style: .continuous
             ))
             .onHover { hovering in
-                withAnimation(.spring(response: 0.4, dampingFraction: 0.7, blendDuration: 0)) {
-                    displaySettings.isHovered = hovering
-                }
+                displaySettings.isHovered = hovering
             }
             
             // 2. Invisible Notch Trigger (Always present for initial hover)
@@ -80,14 +106,20 @@ struct IslandView: View {
                 .frame(width: notchWidth, height: notchHeight)
                 .onHover { hovering in
                     if hovering {
-                        withAnimation(.spring(response: 0.4, dampingFraction: 0.7, blendDuration: 0)) {
-                            displaySettings.isHovered = true
-                        }
+                        displaySettings.isHovered = true
                     }
                 }
         }
-        // Remove fixed frame to allow window to control size
+        .onPreferenceChange(IslandSizeKey.self) { size in
+            // Dispatch to main queue to avoid layout cycle warnings
+            DispatchQueue.main.async {
+                onSizeChange?(size)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        // Fill the panel without horizontal safe-area inset (notched Macs can otherwise
+        // shift content so the island looks off-center relative to the window frame).
+        .ignoresSafeArea()
     }
     
     // MARK: - Subviews
@@ -96,6 +128,8 @@ struct IslandView: View {
         Text(timerManager.timeString)
             .font(.system(size: 18, weight: .bold, design: .monospaced))
             .foregroundColor(.white.opacity(0.9))
+            .lineLimit(1)
+            .minimumScaleFactor(0.9)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
             .transition(.opacity)
     }
@@ -119,8 +153,10 @@ struct IslandView: View {
                 
                 Text(timerManager.timeString)
                     .font(.system(size: 32, weight: .medium, design: .monospaced))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.9)
             }
-            .padding(.leading, 25)
+            .padding(.leading, 22)
             
             Spacer()
             
@@ -139,44 +175,116 @@ struct IslandView: View {
                     timerManager.reset()
                 }
             }
-            .padding(.trailing, 25)
+            .padding(.trailing, 22)
         }
-        .opacity(isExpanded ? 1 : 0)
-        .animation(.easeInOut(duration: 0.15), value: isExpanded)
     }
     
-    var finishedView: some View {
-        VStack(spacing: 15) {
-            Text(timerManager.mode == .work ? "Focus Done!" : "Rest Done!")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(.orange)
+    var workFinishedView: some View {
+        HStack(spacing: 20) {
+            // Left: Celebration Icon
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.2))
+                    .frame(width: 50, height: 50)
+                Image(systemName: "brain.head.profile")
+                    .font(.system(size: 24))
+                    .foregroundColor(.orange)
+            }
+            .padding(.leading, 30)
             
-            HStack(spacing: 15) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("专注结束！")
+                    .font(.system(size: 18, weight: .bold))
+                Text("辛苦了，喝杯水休息一下吧。")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            
+            Spacer()
+            
+            // Right: Actions
+            HStack(spacing: 12) {
                 Button(action: {
                     timerManager.toggleMode()
                     timerManager.start()
                 }) {
-                    Text(timerManager.mode == .work ? "Start Break" : "Start Work")
+                    Text("进入休息")
                         .font(.system(size: 13, weight: .bold))
-                        .padding(.horizontal, 18)
+                        .padding(.horizontal, 16)
                         .padding(.vertical, 8)
                         .background(Color.orange)
-                        .cornerRadius(20)
+                        .cornerRadius(18)
                 }
                 .buttonStyle(.plain)
                 
                 Button(action: {
                     timerManager.reset()
                 }) {
-                    Text("End")
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundColor(.white.opacity(0.5))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .padding(10)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
             }
+            .padding(.trailing, 30)
         }
-        .opacity(isExpanded ? 1 : 0)
-        .animation(.easeInOut(duration: 0.15), value: isExpanded)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+    
+    var breakFinishedView: some View {
+        HStack(spacing: 20) {
+            // Left: Coffee/Energy Icon
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.2))
+                    .frame(width: 50, height: 50)
+                Image(systemName: "cup.and.saucer.fill")
+                    .font(.system(size: 24))
+                    .foregroundColor(.green)
+            }
+            .padding(.leading, 30)
+            
+            VStack(alignment: .leading, spacing: 4) {
+                Text("休息结束！")
+                    .font(.system(size: 18, weight: .bold))
+                Text("能量已充满，开始下一段专注吗？")
+                    .font(.system(size: 13))
+                    .foregroundColor(.white.opacity(0.7))
+            }
+            
+            Spacer()
+            
+            // Right: Actions
+            HStack(spacing: 12) {
+                Button(action: {
+                    timerManager.toggleMode()
+                    timerManager.start()
+                }) {
+                    Text("开始专注")
+                        .font(.system(size: 13, weight: .bold))
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                        .background(Color.green)
+                        .cornerRadius(18)
+                }
+                .buttonStyle(.plain)
+                
+                Button(action: {
+                    timerManager.reset()
+                }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold))
+                        .padding(10)
+                        .background(Color.white.opacity(0.1))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.trailing, 30)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
     func controlButton(icon: String, color: Color, action: @escaping () -> Void) -> some View {

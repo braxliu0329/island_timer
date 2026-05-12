@@ -1,9 +1,6 @@
 import AppKit
-import SwiftUI
-
-import AppKit
-import SwiftUI
 import Combine
+import SwiftUI
 
 class IslandHostingView<Content: View>: NSHostingView<Content> {
     var displaySettings: DisplaySettings
@@ -24,23 +21,22 @@ class IslandHostingView<Content: View>: NSHostingView<Content> {
     }
     
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let bounds = self.bounds
+        // Since the window now dynamically resizes to match the island size,
+        // we can simply check if the point is within the window's bounds.
+        // The window size is kept in sync with the capsule via onSizeChange.
         
-        let isRunning = timerManager.status == .running || timerManager.status == .paused
-        let width = displaySettings.currentWidth(status: timerManager.status, isRunning: isRunning)
-        let height = displaySettings.currentHeight(status: timerManager.status, isRunning: isRunning)
-        
-        // The Capsule Rect is the only area that should intercept clicks
-        let xStart = (bounds.width - width) / 2
-        let islandRect = NSRect(x: xStart, y: bounds.height - height, width: width, height: height)
-        
-        if islandRect.contains(point) {
+        if self.frame.size.width > 0 && self.frame.size.height > 0 {
             return super.hitTest(point)
         }
         
-        // Return nil for all other areas (including the invisible notch trigger)
-        // This allows clicks to pass through to windows behind the notch.
         return nil
+    }
+    
+    override func layout() {
+        super.layout()
+        if let container = superview, !NSEqualRects(frame, container.bounds) {
+            frame = container.bounds
+        }
     }
 }
 
@@ -55,7 +51,10 @@ class IslandWindow: NSPanel {
         
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 35),
-            styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
+            // Do not combine `.fullSizeContentView` with `.borderless`: full-size content is for
+            // titled windows; with a borderless panel it can mislay the content rect and shift
+            // SwiftUI horizontally on notched Macs.
+            styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
         )
@@ -77,57 +76,61 @@ class IslandWindow: NSPanel {
         
         self.ignoresMouseEvents = false
         
-        let islandView = IslandView(timerManager: timerManager, displaySettings: displaySettings)
-        self.contentView = IslandHostingView(rootView: islandView, displaySettings: displaySettings, timerManager: timerManager)
-        
-        setupSubscriptions()
-        updatePosition()
-    }
-    
-    private func setupSubscriptions() {
-        // Observe all properties that affect window size
-        Publishers.CombineLatest3(
-            timerManager.$status,
-            displaySettings.$isHovered,
-            displaySettings.$isPinned
-        )
-        .receive(on: RunLoop.main)
-        .sink { [weak self] _, _, _ in
-            self?.updatePosition()
+        var islandView = IslandView(timerManager: timerManager, displaySettings: displaySettings)
+        islandView.onSizeChange = { [weak self] newSize in
+            self?.updateWindowSize(to: newSize)
         }
-        .store(in: &cancellables)
+        
+        self.contentView = IslandHostingView(rootView: islandView, displaySettings: displaySettings, timerManager: timerManager)
+
+        // `onSizeChange` from preferences may not fire when width changes; re-center when state
+        // that affects width/height changes (hover, pin, timer status).
+        displaySettings.$isHovered
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateWindowSize(to: .zero) }
+            .store(in: &cancellables)
+        displaySettings.$isPinned
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateWindowSize(to: .zero) }
+            .store(in: &cancellables)
+        timerManager.$status
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateWindowSize(to: .zero) }
+            .store(in: &cancellables)
     }
     
-    func updatePosition() {
-        guard let screen = NSScreen.main else { return }
+    private func updateWindowSize(to size: CGSize) {
+        // Prefer the screen that actually contains this panel so horizontal centering
+        // matches the display the user sees (not always the same as NSScreen.main).
+        guard let screen = self.screen ?? NSScreen.main else { return }
         let screenFrame = screen.frame
         
         let isRunning = timerManager.status == .running || timerManager.status == .paused
-        let contentWidth = displaySettings.currentWidth(status: timerManager.status, isRunning: isRunning)
-        let contentHeight = displaySettings.currentHeight(status: timerManager.status, isRunning: isRunning)
+        let modeledWidth = displaySettings.currentWidth(status: timerManager.status, isRunning: isRunning)
+        let modeledHeight = displaySettings.currentHeight(status: timerManager.status, isRunning: isRunning)
+        // Prefer the larger of layout-reported size and the modeled UI size so the panel is never
+        // narrower than the SwiftUI content (which would look horizontally shifted / clipped).
+        let finalWidth = max(size.width, modeledWidth, displaySettings.notchWidth)
+        let finalHeight = max(size.height, modeledHeight, displaySettings.notchHeight)
         
-        // Target window size
-        let targetWidth = max(contentWidth, displaySettings.notchWidth)
-        let targetHeight = contentHeight
+        // 2–3. Center on the screen’s full frame (same coordinate space as setFrame).
+        let x = screenFrame.midX - finalWidth / 2
         
-        let x = screenFrame.origin.x + (screenFrame.width - targetWidth) / 2
-        let y = screenFrame.origin.y + screenFrame.height - targetHeight
-        let targetFrame = NSRect(x: x, y: y, width: targetWidth, height: targetHeight)
+        // 4. Flush to the top of this screen
+        let y = screenFrame.maxY - finalHeight
         
-        if !self.frame.equalTo(targetFrame) {
-            let isExpanding = targetFrame.width > self.frame.width || targetFrame.height > self.frame.height
-            
-            if isExpanding {
-                // When expanding, increase window size immediately so SwiftUI content has room to animate
-                self.setFrame(targetFrame, display: true, animate: false)
-            } else {
-                // When collapsing, animate the window frame change to match SwiftUI's transition
-                NSAnimationContext.runAnimationGroup({ context in
-                    context.duration = 0.4
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    self.animator().setFrame(targetFrame, display: true)
-                }, completionHandler: nil)
-            }
+        let targetFrame = NSRect(x: x, y: y, width: finalWidth, height: finalHeight)
+        
+        let f = self.frame
+        let epsilon = 0.5
+        let needsUpdate =
+            abs(f.width - finalWidth) > epsilon
+            || abs(f.height - finalHeight) > epsilon
+            || abs(f.minX - targetFrame.minX) > epsilon
+            || abs(f.minY - targetFrame.minY) > epsilon
+        
+        if needsUpdate {
+            setFrame(targetFrame, display: true, animate: false)
         }
     }
 }
