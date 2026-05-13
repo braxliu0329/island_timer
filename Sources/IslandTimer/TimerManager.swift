@@ -2,6 +2,13 @@ import Foundation
 import Combine
 import AppKit
 
+struct DailyStats: Codable {
+    var workSessions: Int = 0
+    var breakSessions: Int = 0
+    var totalWorkTime: TimeInterval = 0
+    var totalBreakTime: TimeInterval = 0
+}
+
 class TimerManager: ObservableObject {
     enum TimerMode {
         case work
@@ -20,8 +27,65 @@ class TimerManager: ObservableObject {
     @Published var timeRemaining: TimeInterval = 25 * 60
     
     private var timer: AnyCancellable?
-    private let workDuration: TimeInterval = 25 * 60
-    private let breakDuration: TimeInterval = 8 * 60
+    
+    // Default values in minutes
+    @Published var workDurationMinutes: Int = 25 {
+        didSet {
+            UserDefaults.standard.set(workDurationMinutes, forKey: "workDurationMinutes")
+            if mode == .work && (status == .idle || status == .finished) {
+                reset()
+            }
+        }
+    }
+    @Published var breakDurationMinutes: Int = 8 {
+        didSet {
+            UserDefaults.standard.set(breakDurationMinutes, forKey: "breakDurationMinutes")
+            if mode == .breakTime && (status == .idle || status == .finished) {
+                reset()
+            }
+        }
+    }
+    
+    @Published var todayStats: DailyStats = DailyStats()
+    
+    init() {
+        self.workDurationMinutes = UserDefaults.standard.integer(forKey: "workDurationMinutes")
+        if self.workDurationMinutes == 0 { self.workDurationMinutes = 25 }
+        
+        self.breakDurationMinutes = UserDefaults.standard.integer(forKey: "breakDurationMinutes")
+        if self.breakDurationMinutes == 0 { self.breakDurationMinutes = 8 }
+        
+        self.timeRemaining = TimeInterval(self.workDurationMinutes * 60)
+        
+        loadStats()
+    }
+    
+    private func loadStats() {
+        let today = getCurrentDateString()
+        let lastSavedDate = UserDefaults.standard.string(forKey: "lastSavedDate") ?? ""
+        if today == lastSavedDate, let data = UserDefaults.standard.data(forKey: "dailyStats"), let stats = try? JSONDecoder().decode(DailyStats.self, from: data) {
+            self.todayStats = stats
+        } else {
+            self.todayStats = DailyStats()
+            saveStats()
+        }
+    }
+    
+    private func saveStats() {
+        UserDefaults.standard.set(getCurrentDateString(), forKey: "lastSavedDate")
+        if let data = try? JSONEncoder().encode(todayStats) {
+            UserDefaults.standard.set(data, forKey: "dailyStats")
+        }
+    }
+    
+    private func getCurrentDateString() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter.string(from: Date())
+    }
+    
+    var workDuration: TimeInterval { TimeInterval(workDurationMinutes * 60) }
+    var breakDuration: TimeInterval { TimeInterval(breakDurationMinutes * 60) }
     
     func start() {
         if status == .idle || status == .finished {
@@ -69,6 +133,17 @@ class TimerManager: ObservableObject {
     private func handleTimerEnd() {
         timer?.cancel()
         status = .finished
+        
+        // Update statistics
+        loadStats() // Ensure we are still on the same day
+        if mode == .work {
+            todayStats.workSessions += 1
+            todayStats.totalWorkTime += workDuration
+        } else {
+            todayStats.breakSessions += 1
+            todayStats.totalBreakTime += breakDuration
+        }
+        saveStats()
         
         // Play system notification sound
         NSSound(named: "Glass")?.play()
