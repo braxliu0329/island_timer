@@ -26,21 +26,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var statisticsWindow: NSWindow?
     let timerManager = TimerManager()
     let displaySettings = DisplaySettings()
+    let featureManager = FeatureManager()
     var statusItem: NSStatusItem?
+    let screenShareSettings = ScreenShareExclusionSettings()
+    var screenShareController: ScreenShareExclusionController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        print("AppDelegate: Application didFinishLaunching")
+        print("AppDelegate: Initial active feature: \(featureManager.activeFeature)")
+
         // Hide the dock icon if you want it to be a pure menu bar app
         // NSApp.setActivationPolicy(.accessory)
-        
-        window = IslandWindow(timerManager: timerManager, displaySettings: displaySettings)
+
+        window = IslandWindow(timerManager: timerManager, displaySettings: displaySettings, featureManager: featureManager)
         window?.makeKeyAndOrderFront(nil)
-        
+
+        print("AppDelegate: Created IslandWindow")
+
+        if let window {
+            screenShareController = ScreenShareExclusionController(windows: [window], settings: screenShareSettings)
+            print("AppDelegate: Created ScreenShareExclusionController")
+        }
+
         setupStatusItem()
+        print("AppDelegate: Setup complete.")
     }
     
     func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
+
         if let button = statusItem?.button {
             button.image = NSImage(systemSymbolName: "timer", accessibilityDescription: "Island Timer")
             button.action = #selector(statusItemClicked(_:))
@@ -48,37 +62,59 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
     }
-    
+
     @objc func statusItemClicked(_ sender: Any?) {
-        let event = NSApp.currentEvent
-        
-        if event?.type == .rightMouseUp {
-            openSettings()
-        } else {
-            // Left click - show menu
-            let menu = NSMenu()
-            menu.addItem(NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ","))
-            menu.addItem(NSMenuItem(title: "统计...", action: #selector(openStatistics), keyEquivalent: "s"))
-            menu.addItem(NSMenuItem.separator())
-            menu.addItem(NSMenuItem(title: "退出", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q"))
-            
-            statusItem?.menu = menu
-            statusItem?.button?.performClick(nil)
-            // Reset menu to nil so the next click triggers the action again
-            statusItem?.menu = nil
-        }
+        _ = NSApp.currentEvent
+        guard let button = statusItem?.button else { return }
+
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let switchToTimer = NSMenuItem(title: "切换到计时器", action: #selector(switchToTimerMode), keyEquivalent: "1")
+        switchToTimer.target = self
+        menu.addItem(switchToTimer)
+
+        let switchToMemo = NSMenuItem(title: "切换到备忘", action: #selector(switchToMemoMode), keyEquivalent: "2")
+        switchToMemo.target = self
+        menu.addItem(switchToMemo)
+
+        menu.addItem(NSMenuItem.separator())
+
+        let settings = NSMenuItem(title: "设置...", action: #selector(openSettings), keyEquivalent: ",")
+        settings.target = self
+        menu.addItem(settings)
+
+        let statistics = NSMenuItem(title: "统计...", action: #selector(openStatistics), keyEquivalent: ";")
+        statistics.target = self
+        menu.addItem(statistics)
+
+        menu.popUp(positioning: nil, at: button.frame.origin, in: button.superview)
+    }
+    
+    @objc private func switchToTimerMode() {
+        print("App: Switching to timer mode from: \(featureManager.activeFeature)")
+        featureManager.activeFeature = .timer
+        window?.orderFrontRegardless()
+        print("App: Switched to timer mode. Current: \(featureManager.activeFeature)")
+    }
+
+    @objc private func switchToMemoMode() {
+        print("App: Switching to memo mode from: \(featureManager.activeFeature)")
+        featureManager.activeFeature = .memo
+        window?.orderFrontRegardless()
+        print("App: Switched to memo mode. Current: \(featureManager.activeFeature)")
     }
 
     @objc func openSettings() {
         if settingsWindow == nil {
-            let settingsView = SettingsView(timerManager: timerManager)
+            let settingsView = SettingsView(timerManager: timerManager, screenShareSettings: screenShareSettings)
             let hostingController = NSHostingController(rootView: settingsView)
             
             // Set the content size to match the view's requirements
             hostingController.view.frame.size = hostingController.view.intrinsicContentSize
             
             settingsWindow = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
+                contentRect: NSRect(x: 0, y: 0, width: 360, height: 420),
                 styleMask: [.titled, .closable],
                 backing: .buffered,
                 defer: false

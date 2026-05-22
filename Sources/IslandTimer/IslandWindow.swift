@@ -43,11 +43,16 @@ class IslandHostingView<Content: View>: NSHostingView<Content> {
 class IslandWindow: NSPanel {
     private var displaySettings: DisplaySettings
     private var timerManager: TimerManager
+    private var featureManager: FeatureManager
     private var cancellables = Set<AnyCancellable>()
+    private var isAutoHidden = false
+    private var wasVisibleBeforeAutoHide = false
+    private var frameBeforeAutoHide: NSRect?
 
-    init(timerManager: TimerManager, displaySettings: DisplaySettings) {
+    init(timerManager: TimerManager, displaySettings: DisplaySettings, featureManager: FeatureManager) {
         self.timerManager = timerManager
         self.displaySettings = displaySettings
+        self.featureManager = featureManager
         
         super.init(
             contentRect: NSRect(x: 0, y: 0, width: 200, height: 35),
@@ -75,8 +80,9 @@ class IslandWindow: NSPanel {
         self.standardWindowButton(.zoomButton)?.isHidden = true
         
         self.ignoresMouseEvents = false
+        self.becomesKeyOnlyIfNeeded = true
         
-        var islandView = IslandView(timerManager: timerManager, displaySettings: displaySettings)
+        var islandView = IslandView(timerManager: timerManager, displaySettings: displaySettings, featureManager: featureManager)
         islandView.onSizeChange = { [weak self] newSize in
             self?.updateWindowSize(to: newSize)
         }
@@ -97,7 +103,19 @@ class IslandWindow: NSPanel {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.updateWindowSize(to: .zero) }
             .store(in: &cancellables)
+        featureManager.$activeFeature
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                self?.handleFeatureChanged()
+                self?.updateWindowSize(to: .zero)
+            }
+            .store(in: &cancellables)
+        
+        handleFeatureChanged()
     }
+
+    override var canBecomeKey: Bool { featureManager.activeFeature == .memo }
+    override var canBecomeMain: Bool { false }
     
     private func updateWindowSize(to size: CGSize) {
         // Prefer the screen that actually contains this panel so horizontal centering
@@ -106,8 +124,8 @@ class IslandWindow: NSPanel {
         let screenFrame = screen.frame
         
         let isRunning = timerManager.status == .running || timerManager.status == .paused
-        let modeledWidth = displaySettings.currentWidth(status: timerManager.status, isRunning: isRunning)
-        let modeledHeight = displaySettings.currentHeight(status: timerManager.status, isRunning: isRunning)
+        let modeledWidth = displaySettings.currentWidth(status: timerManager.status, isRunning: isRunning, activeFeature: featureManager.activeFeature)
+        let modeledHeight = displaySettings.currentHeight(status: timerManager.status, isRunning: isRunning, activeFeature: featureManager.activeFeature)
         // Prefer the larger of layout-reported size and the modeled UI size so the panel is never
         // narrower than the SwiftUI content (which would look horizontally shifted / clipped).
         let finalWidth = max(size.width, modeledWidth, displaySettings.notchWidth)
@@ -132,5 +150,41 @@ class IslandWindow: NSPanel {
         if needsUpdate {
             setFrame(targetFrame, display: true, animate: false)
         }
+    }
+    
+    func setAutoHidden(_ hidden: Bool) {
+        guard hidden != isAutoHidden else { return }
+        isAutoHidden = hidden
+        
+        if hidden {
+            wasVisibleBeforeAutoHide = isVisible
+            frameBeforeAutoHide = frame
+            orderOut(nil)
+            return
+        }
+        
+        guard wasVisibleBeforeAutoHide else { return }
+        if let frameBeforeAutoHide {
+            setFrame(frameBeforeAutoHide, display: false, animate: false)
+        }
+        orderFrontRegardless()
+        wasVisibleBeforeAutoHide = false
+        frameBeforeAutoHide = nil
+        updateWindowSize(to: .zero)
+    }
+    
+    func applyWindowCaptureExclusion(enabled: Bool) {
+        sharingType = enabled ? .none : .readWrite
+    }
+}
+
+extension IslandWindow: CaptureExcludableWindow {}
+
+private extension IslandWindow {
+    func handleFeatureChanged() {
+        displaySettings.isHovered = false
+        displaySettings.isPinned = false
+        WindowTriggerCoordinator.shared.endTrigger(owner: .timer)
+        WindowTriggerCoordinator.shared.endTrigger(owner: .memo)
     }
 }

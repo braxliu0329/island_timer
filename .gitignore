@@ -4,3 +4,7 @@
 /Package.resolved
 .swiftpm/
 .cursor/
+/test_*.swift
+/test_isFlipped
+/test_nshostingview
+/Tests/

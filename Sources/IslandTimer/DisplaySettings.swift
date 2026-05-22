@@ -8,16 +8,22 @@ class DisplaySettings: ObservableObject {
     let notchWidth: CGFloat = 200
     let notchHeight: CGFloat = 35
     
-    func currentHeight(status: TimerManager.TimerStatus, isRunning: Bool) -> CGFloat {
+    func currentHeight(status: TimerManager.TimerStatus, isRunning: Bool, activeFeature: AppFeature) -> CGFloat {
+        if activeFeature == .memo {
+            return (isHovered || isPinned) ? 220 : notchHeight
+        }
         if status == .finished { return 120 }
-        if isHovered || isPinned { return 94 }
+        if activeFeature == .timer, (isHovered || isPinned) { return 94 }
         if isRunning { return 62 }
         return notchHeight
     }
     
-    func currentWidth(status: TimerManager.TimerStatus, isRunning: Bool) -> CGFloat {
+    func currentWidth(status: TimerManager.TimerStatus, isRunning: Bool, activeFeature: AppFeature) -> CGFloat {
+        if activeFeature == .memo {
+            return (isHovered || isPinned) ? 420 : notchWidth
+        }
         if status == .finished { return 460 }
-        if isHovered || isPinned { return 380 }
+        if activeFeature == .timer, (isHovered || isPinned) { return 380 }
         if isRunning { return 124 }
         return notchWidth
     }
