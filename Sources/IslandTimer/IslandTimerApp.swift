@@ -24,7 +24,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var window: IslandWindow?
     var settingsWindow: NSWindow?
     var statisticsWindow: NSWindow?
-    let timerManager = TimerManager()
+    let statisticsStore = FocusStatisticsStore.shared
+    lazy var timerManager = TimerManager(statisticsStore: statisticsStore)
     let displaySettings = DisplaySettings()
     let featureManager = FeatureManager()
     var statusItem: NSStatusItem?
@@ -63,10 +64,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    @objc func statusItemClicked(_ sender: Any?) {
-        _ = NSApp.currentEvent
-        guard let button = statusItem?.button else { return }
+    func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
+        makeIconDockMenu()
+    }
 
+    func makeIconDockMenu() -> NSMenu {
         let menu = NSMenu()
         menu.autoenablesItems = false
 
@@ -88,7 +90,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statistics.target = self
         menu.addItem(statistics)
 
-        menu.popUp(positioning: nil, at: button.frame.origin, in: button.superview)
+        return menu
+    }
+
+    @objc func statusItemClicked(_ sender: Any?) {
+        guard let button = statusItem?.button else { return }
+
+        let menu = makeIconDockMenu()
+
+        if let event = NSApp.currentEvent {
+            NSMenu.popUpContextMenu(menu, with: event, for: button)
+        } else {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.height), in: button)
+        }
     }
     
     @objc private func switchToTimerMode() {
@@ -133,7 +147,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func openStatistics() {
         if statisticsWindow == nil {
-            let statsView = StatisticsView(timerManager: timerManager)
+            let statsView = StatisticsView(timerManager: timerManager, statisticsStore: statisticsStore)
             let hostingController = NSHostingController(rootView: statsView)
             
             hostingController.view.frame.size = hostingController.view.intrinsicContentSize

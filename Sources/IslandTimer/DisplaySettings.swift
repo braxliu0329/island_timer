@@ -24,7 +24,7 @@ class DisplaySettings: ObservableObject {
         }
         if status == .finished { return 460 }
         if activeFeature == .timer, (isHovered || isPinned) { return 380 }
-        if isRunning { return 124 }
+        if isRunning { return 150 }
         return notchWidth
     }
 }

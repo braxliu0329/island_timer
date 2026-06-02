@@ -3,12 +3,9 @@ import SwiftUI
 
 struct StatisticsView: View {
     @ObservedObject var timerManager: TimerManager
-
-    // Mock data for now - in a real app, this would come from a persistence layer
-    let completedWorkSessions: Int = 24
-    let totalWorkTime: TimeInterval = 12 * 60 * 60 // 12 hours
-    let currentStreak: Int = 7
-    let longestStreak: Int = 14
+    @ObservedObject var statisticsStore: FocusStatisticsStore
+    
+    private var snapshot: FocusStatisticsStore.Snapshot { statisticsStore.snapshot }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -29,8 +26,8 @@ struct StatisticsView: View {
                     .font(.headline)
 
                 HStack(spacing: 12) {
-                    StatView(title: "当前", count: currentStreak, subtitle: "天")
-                    StatView(title: "最长", count: longestStreak, subtitle: "天")
+                    StatView(title: "当前", count: snapshot.currentStreakDays, subtitle: "天")
+                    StatView(title: "最长", count: snapshot.longestStreakDays, subtitle: "天")
                 }
             }
             .padding()
@@ -43,8 +40,8 @@ struct StatisticsView: View {
                     .font(.headline)
 
                 HStack(spacing: 12) {
-                    StatView(title: "完成", count: completedWorkSessions, subtitle: "次")
-                    StatView(title: "总计", count: Int(totalWorkTime / 3600), subtitle: "小时")
+                    StatView(title: "完成", count: snapshot.completedWorkSessions, subtitle: "次")
+                    StatView(title: "总计", count: Int(snapshot.totalWorkTimeSeconds / 3600), subtitle: "小时")
                 }
             }
             .padding()
@@ -57,11 +54,9 @@ struct StatisticsView: View {
                     .font(.headline)
 
                 VStack(alignment: .leading, spacing: 6) {
-                    ActivityRow(day: "今天", duration: 125, completed: true)
-                    ActivityRow(day: "昨天", duration: 95, completed: true)
-                    ActivityRow(day: "前天", duration: 45, completed: false)
-                    ActivityRow(day: "周一", duration: 145, completed: true)
-                    ActivityRow(day: "周日", duration: 75, completed: true)
+                    ForEach(snapshot.recentActivities) { activity in
+                        ActivityRow(day: activity.label, duration: activity.durationMinutes, completed: activity.completed)
+                    }
                 }
             }
             .padding()
@@ -134,6 +129,6 @@ struct ActivityRow: View {
 
 struct StatisticsView_Previews: PreviewProvider {
     static var previews: some View {
-        StatisticsView(timerManager: TimerManager())
+        StatisticsView(timerManager: TimerManager(), statisticsStore: .shared)
     }
 }

@@ -5,14 +5,35 @@ struct SettingsView: View {
     @ObservedObject var timerManager: TimerManager
     @ObservedObject var screenShareSettings: ScreenShareExclusionSettings
 
-    @State private var workDuration: TimeInterval = 25 * 60
-    @State private var breakDuration: TimeInterval = 8 * 60
+    @State private var workMinutes: Int = 25
+    @State private var breakMinutes: Int = 8
+    
+    private static let workMinutesRange = 5...120
+    private static let breakMinutesRange = 1...60
+    
+    private static let minutesFormatter: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .none
+        f.allowsFloats = false
+        f.minimum = 0
+        return f
+    }()
 
     init(timerManager: TimerManager, screenShareSettings: ScreenShareExclusionSettings) {
         self.timerManager = timerManager
         self.screenShareSettings = screenShareSettings
-        _workDuration = State(initialValue: timerManager.workDuration)
-        _breakDuration = State(initialValue: timerManager.breakDuration)
+        _workMinutes = State(initialValue: timerManager.workDurationMinutes)
+        _breakMinutes = State(initialValue: timerManager.breakDurationMinutes)
+    }
+    
+    private func timeString(minutes: Int) -> String {
+        let totalSeconds = max(0, minutes) * 60
+        let hours = totalSeconds / 3600
+        let mins = (totalSeconds % 3600) / 60
+        if hours > 0 {
+            return String(format: "%d:%02d:00", hours, mins)
+        }
+        return String(format: "%02d:00", mins)
     }
 
     var body: some View {
@@ -37,14 +58,28 @@ struct SettingsView: View {
                     HStack {
                         Text("专注时长")
                         Spacer()
-                        Stepper("\(Int(workDuration / 60)) 分钟", value: $workDuration, in: 5...120, step: 5)
+                        Text(timeString(minutes: workMinutes))
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        TextField("", value: $workMinutes, formatter: Self.minutesFormatter)
+                            .frame(width: 52)
+                        Text("分钟")
+                            .foregroundColor(.secondary)
+                        Stepper("", value: $workMinutes, in: Self.workMinutesRange, step: 1)
                             .labelsHidden()
                     }
 
                     HStack {
                         Text("休息时长")
                         Spacer()
-                        Stepper("\(Int(breakDuration / 60)) 分钟", value: $breakDuration, in: 1...60, step: 1)
+                        Text(timeString(minutes: breakMinutes))
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.secondary)
+                        TextField("", value: $breakMinutes, formatter: Self.minutesFormatter)
+                            .frame(width: 52)
+                        Text("分钟")
+                            .foregroundColor(.secondary)
+                        Stepper("", value: $breakMinutes, in: Self.breakMinutesRange, step: 1)
                             .labelsHidden()
                     }
                 }
@@ -71,6 +106,22 @@ struct SettingsView: View {
         }
         .padding()
         .frame(minWidth: 360, minHeight: 200)
+        .onChange(of: workMinutes) { newValue in
+            let clamped = min(max(newValue, Self.workMinutesRange.lowerBound), Self.workMinutesRange.upperBound)
+            if clamped != newValue {
+                workMinutes = clamped
+                return
+            }
+            timerManager.setWorkDuration(minutes: clamped)
+        }
+        .onChange(of: breakMinutes) { newValue in
+            let clamped = min(max(newValue, Self.breakMinutesRange.lowerBound), Self.breakMinutesRange.upperBound)
+            if clamped != newValue {
+                breakMinutes = clamped
+                return
+            }
+            timerManager.setBreakDuration(minutes: clamped)
+        }
     }
 }
 

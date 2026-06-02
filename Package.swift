@@ -14,6 +14,11 @@ let package = Package(
             name: "IslandTimer",
             dependencies: [],
             path: "Sources/IslandTimer"
+        ),
+        .testTarget(
+            name: "IslandTimerTests",
+            dependencies: ["IslandTimer"],
+            path: "Tests/IslandTimerTests"
         )
     ]
 )

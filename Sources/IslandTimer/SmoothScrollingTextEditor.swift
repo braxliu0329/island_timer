@@ -4,6 +4,20 @@ import SwiftUI
 
 struct SmoothScrollingTextEditor: NSViewRepresentable {
     @Binding var text: String
+    @Binding var scrollY: CGFloat
+
+    init(text: Binding<String>, scrollY: Binding<CGFloat> = .constant(0)) {
+        _text = text
+        _scrollY = scrollY
+    }
+
+    final class Coordinator {
+        var didApplyInitialScrollPosition = false
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
     
     func makeNSView(context: Context) -> SmoothScrollingTextEditorView {
         let view = SmoothScrollingTextEditorView()
@@ -12,12 +26,24 @@ struct SmoothScrollingTextEditor: NSViewRepresentable {
                 self.text = newText
             }
         }
+        view.onScrollYChange = { y in
+            if abs(self.scrollY - y) > 0.5 {
+                self.scrollY = y
+            }
+        }
         view.setText(text)
         return view
     }
     
     func updateNSView(_ nsView: SmoothScrollingTextEditorView, context: Context) {
         nsView.setText(text)
+        if !context.coordinator.didApplyInitialScrollPosition {
+            context.coordinator.didApplyInitialScrollPosition = true
+            let y = scrollY
+            DispatchQueue.main.async {
+                nsView.setScrollY(y)
+            }
+        }
     }
 }
 
@@ -57,9 +83,11 @@ final class ActivatingClipView: NSClipView {
 
 final class SmoothScrollingTextEditorView: NSView, NSTextViewDelegate {
     var onTextChange: ((String) -> Void)?
+    var onScrollYChange: ((CGFloat) -> Void)?
     
     private let scrollView: SmoothScrollView
     private let textView: ActivatingTextView
+    private var boundsObserver: NSObjectProtocol?
     
     override init(frame frameRect: NSRect) {
         self.scrollView = SmoothScrollView()
@@ -73,6 +101,12 @@ final class SmoothScrollingTextEditorView: NSView, NSTextViewDelegate {
         self.textView = ActivatingTextView()
         super.init(coder: coder)
         setup()
+    }
+
+    deinit {
+        if let boundsObserver {
+            NotificationCenter.default.removeObserver(boundsObserver)
+        }
     }
     
     private func setup() {
@@ -102,6 +136,7 @@ final class SmoothScrollingTextEditorView: NSView, NSTextViewDelegate {
         
         let clipView = ActivatingClipView()
         clipView.targetTextView = textView
+        clipView.postsBoundsChangedNotifications = true
         scrollView.contentView = clipView
         
         scrollView.drawsBackground = false
@@ -112,6 +147,15 @@ final class SmoothScrollingTextEditorView: NSView, NSTextViewDelegate {
         scrollView.documentView = textView
         
         addSubview(scrollView)
+
+        boundsObserver = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification,
+            object: clipView,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            self.onScrollYChange?(self.scrollView.contentView.bounds.origin.y)
+        }
     }
     
     override func layout() {
@@ -131,6 +175,22 @@ final class SmoothScrollingTextEditorView: NSView, NSTextViewDelegate {
         let selectedRange = textView.selectedRange()
         textView.string = newText
         textView.setSelectedRange(selectedRange)
+    }
+
+    func setScrollY(_ y: CGFloat) {
+        guard let docView = scrollView.documentView else {
+            scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: y))
+            scrollView.reflectScrolledClipView(scrollView.contentView)
+            return
+        }
+
+        let visibleHeight = scrollView.contentView.bounds.height
+        let documentHeight = docView.bounds.height
+        let maxY = max(0, documentHeight - visibleHeight)
+        let clampedY = max(0, min(maxY, y))
+
+        scrollView.contentView.setBoundsOrigin(NSPoint(x: 0, y: clampedY))
+        scrollView.reflectScrolledClipView(scrollView.contentView)
     }
 }
 

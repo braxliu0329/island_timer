@@ -13,6 +13,8 @@ struct IslandView: View {
     @ObservedObject var featureManager: FeatureManager
     
     var onSizeChange: ((CGSize) -> Void)? = nil
+
+    @State private var memoScrollY: CGFloat = 0
     
     var notchWidth: CGFloat { displaySettings.notchWidth }
     var notchHeight: CGFloat { displaySettings.notchHeight }
@@ -22,6 +24,10 @@ struct IslandView: View {
             return displaySettings.isPinned || timerManager.status == .finished || displaySettings.isHovered
         }
         return displaySettings.isPinned || displaySettings.isHovered
+    }
+
+    private var isMemoExpanded: Bool {
+        featureManager.activeFeature == .memo && isExpanded
     }
     
     var isRunning: Bool {
@@ -124,6 +130,20 @@ struct IslandView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         .ignoresSafeArea()
+        .onAppear {
+            memoScrollY = featureManager.memoTextScrollPositionY()
+        }
+        .onChange(of: memoScrollY) { newValue in
+            featureManager.setMemoTextScrollPositionY(newValue)
+        }
+        .onChange(of: isMemoExpanded) { expanded in
+            if expanded {
+                memoScrollY = featureManager.memoTextScrollPositionY()
+            } else {
+                featureManager.setMemoTextScrollPositionY(memoScrollY)
+                featureManager.flushScrollPositionsPersist()
+            }
+        }
     }
     
     private var collapsedView: some View {
@@ -133,7 +153,11 @@ struct IslandView: View {
                 .foregroundColor(.white.opacity(0.65))
             Text(timerManager.timeString)
                 .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .monospacedDigit()
                 .foregroundColor(.white.opacity(0.9))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .layoutPriority(1)
             Spacer()
         }
         .padding(.horizontal, 14)
@@ -156,7 +180,7 @@ struct IslandView: View {
 
     private var memoExpandedView: some View {
         VStack(spacing: 0) {
-            SmoothScrollingTextEditor(text: $featureManager.memoText)
+            SmoothScrollingTextEditor(text: $featureManager.memoText, scrollY: $memoScrollY)
                 .padding(10)
         }
         .padding(10)
@@ -177,25 +201,28 @@ struct IslandView: View {
     }
 
     private var compactRunningView: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            HStack(spacing: 4) {
-                Image(systemName: timerManager.mode == .work ? "brain.head.profile" : "cup.and.saucer.fill")
-                    .foregroundColor(timerManager.mode == .work ? .orange : .green)
-                    .font(.system(size: 9))
-                Text(timerManager.mode == .work ? "Work" : "Break")
-                    .font(.system(size: 8, weight: .bold))
-                    .textCase(.uppercase)
-                    .foregroundColor(.gray)
-            }
-
+        HStack(spacing: 8) {
+            Image(systemName: timerManager.mode == .work ? "brain.head.profile" : "cup.and.saucer.fill")
+                .foregroundColor(timerManager.mode == .work ? .orange : .green)
+                .font(.system(size: 11, weight: .semibold))
+            
+            Text(timerManager.mode == .work ? "Work" : "Break")
+                .font(.system(size: 10, weight: .bold))
+                .textCase(.uppercase)
+                .foregroundColor(.gray)
+            
+            Spacer(minLength: 6)
+            
             Text(timerManager.timeString)
-                .font(.system(size: 18, weight: .bold, design: .monospaced))
+                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                .monospacedDigit()
+                .foregroundColor(.white.opacity(0.92))
                 .lineLimit(1)
-                .minimumScaleFactor(0.9)
+                .minimumScaleFactor(0.6)
+                .layoutPriority(1)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private var expandedView: some View {
@@ -221,6 +248,23 @@ struct IslandView: View {
             Spacer()
 
             HStack(spacing: 15) {
+                if timerManager.canSkipBreak {
+                    Button(action: {
+                        timerManager.skipBreak()
+                    }) {
+                        Text("跳过休息时间")
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(.white.opacity(0.92))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.7)
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(Color.white.opacity(0.08))
+                            .cornerRadius(16)
+                    }
+                    .buttonStyle(.plain)
+                }
+
                 if timerManager.status == .running {
                     controlButton(icon: "pause.fill", color: .white.opacity(0.1)) {
                         timerManager.pause()
@@ -359,9 +403,6 @@ struct IslandView: View {
         .buttonStyle(.plain)
     }
     
-    private var notchControls: some View {
-        EmptyView()
-    }
 }
 
 struct IslandView_Previews: PreviewProvider {
