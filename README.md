@@ -1,65 +1,90 @@
-# Island Timer 🏝️
+# IslandTimer
 
-Island Timer 是一款专为 macOS 设计的灵动岛风格番茄钟应用。它巧妙地利用了 MacBook 的刘海屏（Notch）区域，提供了一种优雅且非侵入性的计时体验。
+IslandTimer 是一款面向 macOS 的灵动岛（Notch）风格番茄钟应用：将计时信息与交互尽量“收纳”到屏幕顶部刘海区域附近，以更低打扰的方式完成专注与休息切换。应用以菜单栏形态运行，并提供计时器与备忘两种模式。
 
-## ✨ 特性
+仓库地址：<https://github.com/braxliu0329/island_timer>
 
-- **灵动岛交互**：完美的 Notch 集成，计时器在刘海区域展开和收起，动画平滑自然。
-- **备忘录模式**：与计时器共享同一个窗口与展开/折叠逻辑，只是在展开后内容切换为可编辑文本。
-- **文本持久化**：备忘文本会自动保存，折叠再展开或重启应用后仍会保留。
-- **多种计时模式**：内置「专注模式」（25分钟）和「休息模式」（8分钟）。
-- **智能展开**：
-  - **折叠态**：与刘海融为一体，不占用屏幕空间。
-  - **运行态**：显示精简的时间进度。
-  - **悬停态/展开态**：鼠标悬停展开完整面板，支持开始、暂停、重置与切换模式。
-- **系统集成**：菜单栏应用体验，支持打开「设置」「统计」等窗口。
-- **声音提醒**：倒计时结束时会播放系统提示音提醒。
+## 功能特性
 
-## 🚀 快速开始
+- 灵动岛式悬停交互：窗口折叠时贴合刘海区域，鼠标悬停自动展开，移出自动折叠
+- 番茄钟计时：支持开始、暂停、重置；专注/休息两种阶段
+- 备忘模式：在同一窗口内切换为可编辑文本，内容自动保存
+- 设置面板：自定义专注/休息时长；支持屏幕共享/录屏时隐藏岛屿窗口
+- 统计面板：展示连续专注天数、累计完成次数与近期活动
 
-### 环境要求
+## 技术栈
+
+- Swift 5.9+ / Swift Package Manager
+- SwiftUI：界面与动画
+- AppKit：`NSPanel`（无边框置顶窗口）、`NSStatusItem`（菜单栏入口）
+- Combine：状态绑定与持久化触发
+
+## 环境要求
+
 - macOS 13.0 或更高版本
-- 建议在带有刘海屏的 MacBook (M1/M2/M3 系列) 上使用，以获得最佳视觉效果。
+- Xcode 15+ 或安装 Command Line Tools（用于 Swift 5.9 工具链）
+- 建议在带刘海屏的 MacBook 上使用以获得最佳视觉效果（非必需）
 
-### 安装与运行
-1. 克隆本项目：
-   ```bash
-   git clone https://github.com/braxliu0329/island_timer.git
-   ```
-2. 进入项目目录：
-   ```bash
-   cd island_timer
-   ```
-3. 使用 Swift Package Manager 运行：
-   ```bash
-   swift run IslandTimer
-   ```
+## 快速上手
 
-### 使用说明
-- **切换模式**：点击菜单栏图标，可在「计时器 / 备忘」之间切换。
-- **展开/折叠**：展开与折叠逻辑对两种模式一致（悬停展开、移出折叠；如启用固定则保持展开）。
+### 方式一：Swift Package Manager 直接运行
 
-## 🛠️ 技术栈
-- **Swift 5.9+**
-- **SwiftUI**: 用于构建灵动岛 UI 和交互动画。
-- **AppKit (NSPanel)**: 用于实现窗口的置顶、跨桌面显示以及精确的刘海位置定位。
-- **Combine**: 用于计时器逻辑与 UI 的响应式绑定。
+```bash
+git clone https://github.com/braxliu0329/island_timer.git
+cd island_timer
+swift run IslandTimer
+```
 
-## 📂 项目结构
-- `IslandTimerApp.swift`: 应用入口，配置菜单栏及生命周期。
-- `IslandWindow.swift`: 自定义 `NSPanel` 窗口，处理层级、透明度及交互区域。
-- `IslandView.swift`: 核心 SwiftUI 视图，包含各种状态下的 UI 逻辑。
-- `FeatureManager.swift`: 管理当前模式与备忘文本，并负责持久化存储。
-- `TimerManager.swift`: 计时器核心逻辑，处理时间倒计时与状态转换。
-- `DisplaySettings.swift`: 管理灵动岛的尺寸、悬停及固定状态。
+如需 Release 构建：
 
-## 📝 路线图 (Roadmap)
-- [ ] 支持自定义工作/休息时长。
-- [ ] 增加多种配色主题。
-- [ ] 历史统计功能增强。
+```bash
+swift run -c release IslandTimer
+```
 
-## 📄 开源协议
-本项目采用 [MIT License](LICENSE) 开源。
+### 方式二：使用 Xcode 打开
 
----
-*本项目目前处于初级版 (v0.1.0)，欢迎提交 Issue 或 Pull Request 参与贡献！*
+1. 使用 Xcode 打开 `Package.swift`
+2. 选择可执行目标 `IslandTimer` 并运行
+
+## 使用指南
+
+### 菜单栏入口
+
+- 启动后，菜单栏会出现应用图标
+- 点击图标可打开菜单，并可在「计时器 / 备忘」之间切换
+- 菜单中可打开「设置…」「统计…」窗口
+
+### 计时器模式
+
+- 折叠态：仅显示精简信息，尽量不占用屏幕空间
+- 展开态：可进行开始、暂停、重置等操作
+
+### 备忘模式
+
+- 展开后可直接编辑文本内容
+- 文本自动持久化保存，重启应用后仍会保留
+
+### 设置与屏幕共享
+
+- 在「设置…」中可调整专注/休息时长
+- 可开启「隐藏岛屿窗口」用于屏幕共享或录屏场景
+
+## 数据与隐私
+
+- 计时配置、统计数据与备忘内容存储在本机 `UserDefaults` 中
+- 本项目不包含联网同步逻辑
+
+## 贡献指南
+
+欢迎 Issue 与 Pull Request：
+
+1. Fork 本仓库并从 `main` 创建分支
+2. 保持改动聚焦（一个 PR 尽量只做一类事情）
+3. 确保本地可编译运行（至少通过 `swift build` / `swift run`）
+4. 在 PR 中清晰描述变更动机、实现方式与验证方式
+
+问题反馈：<https://github.com/braxliu0329/island_timer/issues>
+
+## 许可证
+
+本项目采用 MIT License，详见 [LICENSE](LICENSE)。
